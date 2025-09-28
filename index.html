@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Ponto Eletrônico — DUO</title>
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827; --fg:#e5e7eb; --muted:#9ca3af;
+      --brand:#22c55e; --danger:#ef4444; --warn:#f59e0b;
+      --btn:#2563eb; --btn2:#16a34a;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial}
+    .wrap{max-width:520px;margin:0 auto;padding:16px}
+    .card{background:var(--panel);border-radius:18px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    h1{font-size:20px;margin:0 0 8px}
+    .muted{color:var(--muted);font-size:13px}
+    label{display:block;font-size:14px;margin:10px 0 6px}
+    input[type="number"], select{
+      width:100%;padding:14px 12px;border-radius:12px;border:1px solid #1f2937;background:#0b1220;color:var(--fg);font-size:16px;
+    }
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    button{
+      width:100%;padding:14px 12px;border:0;border-radius:12px;
+      background:var(--btn);color:#fff;font-weight:600;font-size:16px;
+    }
+    button.secondary{background:#334155}
+    button.success{background:var(--btn2)}
+    .row{display:flex;gap:8px}
+    .row>button{flex:1}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    .ok{color:var(--brand)}
+    .warn{color:var(--warn)}
+    .err{color:var(--danger)}
+    .center{display:flex;align-items:center;justify-content:center}
+    .cam-wrap{margin-top:12px;background:#000;border-radius:12px;overflow:hidden}
+    video, canvas{display:block;width:100%;height:auto}
+    .footer{margin-top:14px;text-align:center;font-size:12px;color:var(--muted)}
+    .badge{display:inline-block;background:#0b1220;border:1px solid #1f2937;border-radius:999px;padding:6px 10px;font-size:12px}
+    .loc{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .note{font-size:12px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Registro de Ponto</h1>
+      <div class="muted">Somente celular • Requer GPS & câmera frontal (HTTPS)</div>
+
+      <label for="idColab">Seu ID</label>
+      <input id="idColab" type="number" inputmode="numeric" placeholder="Ex: 123" />
+
+      <label for="tipo">Tipo do registro</label>
+      <select id="tipo">
+        <option value="E">Entrada</option>
+        <option value="I">Início intervalo</option>
+        <option value="R">Retorno intervalo</option>
+        <option value="S">Saída</option>
+      </select>
+
+      <div class="loc" style="margin-top:10px">
+        <span class="badge" id="gpsStatus">GPS: aguardando…</span>
+        <span class="badge" id="distA">—</span>
+        <span class="badge" id="distB">—</span>
+      </div>
+      <div class="hint" id="locHint">Ative o GPS. O registro só vale dentro do raio permitido.</div>
+
+      <div class="cam-wrap" id="camWrap" hidden>
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" hidden></canvas>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <button id="btnAbrirCam" class="secondary">Abrir câmera frontal</button>
+        <button id="btnCapturar" class="secondary" disabled>Capturar selfie</button>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <button id="btnRegistrar" class="success" disabled>Registrar ponto</button>
+      </div>
+
+      <div class="hint" id="msg"></div>
+      <div class="note">
+        Dica: seu ID fica salvo neste aparelho (localStorage).<br/>
+        Caso a câmera não abra, verifique permissões do navegador.
+      </div>
+    </div>
+
+    <div class="footer">DUO • Ponto Eletrônico simples via GitHub Pages + Google Planilha</div>
+  </div>
+
+<script>
+// ========= CONFIG =========
+// 1) Cole a URL do seu Web App do Google Apps Script (passo-a-passo no README)
+const WEBAPP_URL = "COLE_AQUI_SUA_URL_DO_WEBAPP";
+// 2) Um token simples para evitar abuso externo (defina o mesmo no Apps Script)
+const SHARED_TOKEN = "TROQUE-ESTE-TOKEN";
+
+// 3) Coordenadas das 2 unidades (preencha com precisão via Google Maps -> clique direito -> copiar coordenadas)
+const UNIDADES = [
+  { nome: "Av. Simoa Gomes, 726 - Heliópolis", lat: -8.891553, lng: -36.492110, raio_m: 150 },
+  { nome: "R. Dom José, 187 - Santo Antônio", lat: -8.887950, lng: -36.488380, raio_m: 150 }
+];
+// Ajuste o raio se necessário (em metros). 150 m costuma ser suficiente em áreas urbanas.
+// =========================
+
+const idColab = document.getElementById('idColab');
+const tipo = document.getElementById('tipo');
+const gpsStatus = document.getElementById('gpsStatus');
+const distA = document.getElementById('distA');
+const distB = document.getElementById('distB');
+const locHint = document.getElementById('locHint');
+const btnAbrirCam = document.getElementById('btnAbrirCam');
+const btnCapturar = document.getElementById('btnCapturar');
+const btnRegistrar = document.getElementById('btnRegistrar');
+const msg = document.getElementById('msg');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const camWrap = document.getElementById('camWrap');
+
+// Lembrar último ID no aparelho
+idColab.value = localStorage.getItem('ultimo_id_colab') || "";
+idColab.addEventListener('change', ()=> localStorage.setItem('ultimo_id_colab', idColab.value));
+
+let stream = null;
+let fotoBase64 = null;
+let ultimaPos = null;
+
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const toRad = d => d*Math.PI/180;
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R*c;
+}
+
+function fmtDist(m){
+  if (m >= 1000) return (m/1000).toFixed(2) + " km";
+  return m.toFixed(0) + " m";
+}
+
+async function pegarGPS(){
+  if (!('geolocation' in navigator)){
+    gpsStatus.textContent = "GPS indisponível";
+    gpsStatus.className = "badge err";
+    return;
+  }
+  gpsStatus.textContent = "GPS: solicitando…";
+  gpsStatus.className = "badge";
+  return new Promise((resolve,reject)=>{
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const {latitude, longitude, accuracy} = pos.coords;
+      ultimaPos = {lat: latitude, lng: longitude, acc: accuracy};
+      gpsStatus.textContent = `GPS ok (±${Math.round(accuracy)} m)`;
+      gpsStatus.className = "badge ok";
+      // mostrar distâncias
+      const d0 = haversine(latitude, longitude, UNIDADES[0].lat, UNIDADES[0].lng);
+      const d1 = haversine(latitude, longitude, UNIDADES[1].lat, UNIDADES[1].lng);
+      distA.textContent = `A: ${fmtDist(d0)}`;
+      distB.textContent = `B: ${fmtDist(d1)}`;
+      distA.className = "badge";
+      distB.className = "badge";
+      resolve(ultimaPos);
+    }, err=>{
+      gpsStatus.textContent = "GPS negado";
+      gpsStatus.className = "badge err";
+      reject(err);
+    }, {enableHighAccuracy:true, timeout:15000, maximumAge:0});
+  });
+}
+
+async function abrirCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio:false });
+    video.srcObject = stream;
+    camWrap.hidden = false;
+    btnCapturar.disabled = false;
+    msg.textContent = "Câmera aberta. Posicione o rosto e toque em Capturar.";
+    msg.className = "hint";
+  }catch(e){
+    msg.textContent = "Não foi possível abrir a câmera. Verifique permissões.";
+    msg.className = "hint err";
+  }
+}
+
+function capturarSelfie(){
+  if (!stream){ 
+    msg.textContent = "Abra a câmera antes de capturar.";
+    msg.className = "hint warn";
+    return;
+  }
+  const vw = video.videoWidth || 640;
+  const vh = video.videoHeight || 480;
+  // Quadrado central (rosto) para selfie mais "zoomada"
+  const size = Math.min(vw, vh);
+  const sx = (vw - size)/2;
+  const sy = (vh - size)/2;
+
+  canvas.width = 640;
+  canvas.height = 640;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, sx, sy, size, size, 0, 0, canvas.width, canvas.height);
+  fotoBase64 = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+  msg.textContent = "Selfie capturada. Você já pode Registrar ponto.";
+  msg.className = "hint ok";
+  btnRegistrar.disabled = false;
+}
+
+function validarLocal(pos){
+  if (!pos) return {ok:false, motivo:"Sem posição GPS"};
+  const {lat, lng} = pos;
+  // Verifica se está dentro do raio de qualquer unidade
+  for (const u of UNIDADES){
+    const d = haversine(lat, lng, u.lat, u.lng);
+    if (d <= u.raio_m) return {ok:true, unidade:u, dist:d};
+  }
+  return {ok:false, motivo:"Fora da área permitida"};
+}
+
+async function registrarPonto(){
+  const id = (idColab.value||"").trim();
+  if (!id){
+    msg.textContent = "Informe seu ID.";
+    msg.className = "hint warn";
+    return;
+  }
+  if (!fotoBase64){
+    msg.textContent = "Capture a selfie antes de registrar.";
+    msg.className = "hint warn";
+    return;
+  }
+  try{ await pegarGPS(); }catch(e){}
+  const locOK = validarLocal(ultimaPos);
+  if (!locOK.ok){
+    msg.textContent = "Você está fora do local permitido para registrar.";
+    msg.className = "hint err";
+    return;
+  }
+
+  msg.textContent = "Enviando…";
+  msg.className = "hint";
+
+  const payload = {
+    token: SHARED_TOKEN,
+    id_colab: id,
+    tipo: tipo.value, // E/I/R/S
+    lat: ultimaPos?.lat,
+    lng: ultimaPos?.lng,
+    acc: ultimaPos?.acc,
+    foto_base64: fotoBase64,
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Fortaleza",
+    ua: navigator.userAgent
+  };
+
+  try{
+    const res = await fetch(WEBAPP_URL, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (json.success){
+      msg.textContent = "✅ Ponto registrado com sucesso!";
+      msg.className = "hint ok";
+      // trava o botão por 5s pra evitar duplicidade
+      btnRegistrar.disabled = true;
+      setTimeout(()=>{ btnRegistrar.disabled = false; }, 5000);
+    }else{
+      msg.textContent = "Falha: " + (json.message || "erro desconhecido");
+      msg.className = "hint err";
+    }
+  }catch(e){
+    msg.textContent = "Erro ao enviar. Verifique conexão.";
+    msg.className = "hint err";
+  }
+}
+
+// Eventos
+btnAbrirCam.addEventListener('click', abrirCamera);
+btnCapturar.addEventListener('click', capturarSelfie);
+btnRegistrar.addEventListener('click', registrarPonto);
+
+// Já tenta GPS ao abrir
+pegarGPS().catch(()=>{});
+</script>
+</body>
+</html>
