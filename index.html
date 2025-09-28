@@ -261,11 +261,19 @@ async function registrarPonto(){
 
   try{
     const res = await fetch(WEBAPP_URL, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify(payload)
-    });
-    const json = await res.json();
+  method: "POST",
+  // sem headers para evitar preflight CORS
+  body: JSON.stringify(payload) // continua mandando JSON, mas como texto/plain
+});
+
+// Leia como texto e depois parseie (caso o servidor retorne HTML de erro, veremos a mensagem)
+const raw = await res.text();
+let json;
+try {
+  json = JSON.parse(raw);
+} catch (e) {
+  throw new Error(`Resposta não-JSON (status ${res.status}): ${raw.slice(0,200)}`);
+}
     if (json.success){
       msg.textContent = "✅ Ponto registrado com sucesso!";
       msg.className = "hint ok";
