@@ -28,7 +28,7 @@
       background:var(--btn);color:#fff;font-weight:600;font-size:16px;
     }
     button.secondary{background:#334155}
-    button.success{background:var(--btn2)}
+    button.success{background:#16a34a}
     .row{display:flex;gap:8px}
     .row>button{flex:1}
     .hint{font-size:12px;color:var(--muted);margin-top:6px}
@@ -216,6 +216,7 @@ async function registrarPonto(){
   if (!locOK.ok){ msg.textContent = "Você está fora do local permitido para registrar."; msg.className = "hint err"; return; }
 
   msg.textContent = "Enviando…"; msg.className = "hint";
+
   const payload = {
     token: SHARED_TOKEN, id_colab: id, tipo: tipo.value,
     lat: ultimaPos?.lat, lng: ultimaPos?.lng, acc: ultimaPos?.acc,
@@ -224,20 +225,15 @@ async function registrarPonto(){
   };
 
   try{
-    const res  = await fetch(WEBAPP_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
-    const text = await res.text();
-    let json;
-    try { json = JSON.parse(text); }
-    catch { throw new Error(`Resposta não-JSON (status ${res.status}): ${text.slice(0,200)}`); }
-
-    if (json.success){
-      msg.textContent = "✅ Ponto registrado com sucesso!";
-      msg.className = "hint ok";
-      btnRegistrar.disabled = true; setTimeout(()=>btnRegistrar.disabled=false, 5000);
-    }else{
-      msg.textContent = "Falha: " + (json.message || `status ${res.status}`);
-      msg.className = "hint err";
-    }
+    await fetch(WEBAPP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      mode: "no-cors",
+      body: JSON.stringify(payload)
+    });
+    msg.textContent = "✅ Enviado. Verifique a planilha/Drive em alguns segundos.";
+    msg.className = "hint ok";
+    btnRegistrar.disabled = true; setTimeout(()=>btnRegistrar.disabled=false, 5000);
   }catch(e){
     msg.textContent = "Erro ao enviar: " + (e.message || e);
     msg.className = "hint err";
